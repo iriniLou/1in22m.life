@@ -4,29 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>1 из 22 миллионов</title>
-<meta name="description" content="Проживи один учебный год одного из 22 миллионов школьников и студентов России. Регион, год и история — случайно, решения — твои.">
+<meta name="description" content="Симуляция взросления: родитесь в одном из 89 регионов России и проживите детство и юность с 7 до 23 лет. Решения в сети — ваши, последствия — иногда через годы.">
 <meta property="og:title" content="1 из 22 миллионов">
-<meta property="og:description" content="Случай выбирает регион, год и историю. Решения — твои.">
-<meta name="theme-color" content="#f6f4ef">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4ed8'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='white' font-family='Arial' font-weight='700'%3E1%3C/text%3E%3C/svg%3E">
+<meta property="og:description" content="Родитесь случайно и проживите одну из 22 миллионов жизней. Решения в сети — ваши.">
+<meta name="theme-color" content="#0e1215">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e1215'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%23e06c8a' font-family='Georgia' font-weight='700'%3E1%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
-<header class="top">
-  <a class="logo" href="./"><b>1</b> из 22 млн</a>
-  <div class="steps" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-</header>
-<main id="app"></main>
+<body class="start">
+<div id="app"></div>
 <noscript><p style="padding:20px">Для игры нужен включённый JavaScript.</p></noscript>
 <script src="js/regions.js"></script>
-<script src="js/content.js"></script>
-<script src="js/stories-past.js"></script>
-<script src="js/stories-present.js"></script>
-<script src="js/stories-future.js"></script>
-<script src="js/stories-echo.js"></script>
-<script src="js/app.js"></script>
+<script src="js/world.js"></script>
+<script src="js/events.js"></script>
+<script src="js/engine.js"></script>
 </body>
 </html>

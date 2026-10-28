@@ -1,6 +1,6 @@
 """
-Собирает Word-файл со всеми историями и ветками игры «1 из 22 миллионов»
-прямо из файлов js/stories-*.js и js/content.js — документ всегда совпадает с игрой.
+Собирает Word-файл со всеми событиями, решениями и последствиями игры «1 из 22 миллионов»
+прямо из js/events.js и js/world.js — документ всегда совпадает с игрой.
 
 Запуск (из папки 1in22m):  python tools/make_doc.py
 Нужен python-docx:          pip install python-docx
@@ -11,70 +11,79 @@ import re
 
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor, Cm
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "1_из_22_миллионов_все_ветки.docx"
+OUT = ROOT / "1_из_22_миллионов_все_события.docx"
 
-ACCENT = RGBColor(0x1D, 0x4E, 0xD8)
+ACCENT = RGBColor(0xC2, 0x3B, 0x5E)
 DIM = RGBColor(0x6B, 0x6B, 0x73)
-ERA_NAMES = {"past": "Прошлое (2004–2010)", "present": "Настоящее (2025–2026)", "future": "Ближайшее будущее (2031–2036)"}
-STAT_NAMES = {"f": "друзья рядом", "t": "доверие к взрослым", "c": "уверенность", "d": "цифровая грамотность"}
-TILT_NAMES = {"study": "📚 Учёба", "friends": "🫶 Друзья", "create": "🎨 Творчество", "sport": "⚽ Спорт", "games": "🎮 Игры и техника"}
-
-# Пример подстановок для чтения (в игре всё выпадает случайно; для колледжа слова меняются на «группа», «куратор» и т. д.)
-SAMPLE = {
-    "name": "Саша", "friend": "Женя", "year": "2026", "age": "14", "region": "Тульская область",
-    "in_region": "в Тульской области", "city": "Тула", "spec": "Сварочное производство",
-    "mentor": "Анна Сергеевна", "mentor_dat": "Анне Сергеевне", "mentor_acc": "Анну Сергеевну", "mentor_ins": "Анной Сергеевной",
-    "grade": "8 «Б» класс", "school": "школа", "school_cap": "Школа", "in_school": "в школе", "in_school_cap": "В школе",
-    "school_gen": "школы", "to_school": "в школу", "mates": "одноклассники", "mates_dat": "одноклассникам",
-    "mates_gen": "одноклассников", "in_class": "в классе", "in_class_cap": "В классе", "klass_gen": "класса",
-    "all_klass": "всем классом", "class_chat": "чат класса", "class_chat_gen": "чата класса", "in_chat": "в чате класса",
-    "parallel": "из параллельного класса", "mentor_role": "классная руководительница",
-    "mentor_role_dat": "классной руководительнице", "mentor_role_cap": "Классная руководительница",
+GOOD = RGBColor(0x1E, 0x7D, 0x4A)
+BAD = RGBColor(0xB4, 0x23, 0x18)
+STAT = {"sec": "защищённость", "hap": "счастье", "kno": "знания", "rel": "отношения", "tru": "доверие к взрослым", "money": "₽", "exp": "цифровой след"}
+FOCUS = {"study": "📚 Учёба", "friends": "🫶 Друзья", "games": "🎮 Игры", "create": "🎨 Блог и творчество", "sport": "⚽ Спорт", "work": "💼 Подработка"}
+FLAGS = {
+    "pwdWeak": "простой пароль", "pwdShared": "пароль знает кто-то ещё", "pwdSame": "один пароль везде", "twofa": "вход по коду (второй фактор)",
+    "notesPass": "пароли в заметках", "sso": "вход через соцсеть", "overshare": "много личного в открытом доступе", "geo": "геометки",
+    "profileClosed": "профиль только для друзей", "stranger": "общение с незнакомцем", "cheats": "взломанные программы и читы",
+    "joinedMock": "участвовал(а) в насмешках", "rules": "договор с родителями", "bypass": "обходит родительский контроль",
+    "cardSaved": "карта сохранена в сервисах", "cardLimit": "лимит и уведомления по карте", "cardShared": "карта у друга",
+    "drop": "проводил(а) чужие переводы", "photoSent": "отправил(а) личное фото", "simGiven": "сим-карта на свой паспорт для другого",
+    "smsGiven": "продиктовал(а) код", "selfban": "самозапрет на кредиты", "noUpdates": "отключены обновления", "codeword": "семейное кодовое слово",
+    "voicePublic": "голос в открытом доступе", "gmWarned": "бабушка предупреждена", "gmSaved": "сбросил(а) звонок мошенников бабушке",
+    "momWarned": "мама знает про SMS-развод", "club": "ходит в компьютерный клуб", "alone": "в интернете без взрослых",
+    "leaked": "пароли утекли", "hasGm": "бабушка живёт с вами", "sibYoung": "младший брат", "gmLost": "бабушка потеряла деньги",
+    "pyrFriends": "позвал(а) друзей в пирамиду", "track": "учёба / работа", "spec": "специальность",
 }
-SAMPLE_SPO = dict(SAMPLE, grade="2 курс", school="колледж", school_cap="Колледж", in_school="в колледже",
-                  in_school_cap="В колледже", school_gen="колледжа", to_school="в колледж", mates="одногруппники",
-                  mates_dat="одногруппникам", mates_gen="одногруппников", in_class="в группе", in_class_cap="В группе",
-                  klass_gen="группы", all_klass="всей группой", class_chat="чат группы", class_chat_gen="чата группы",
-                  in_chat="в чате группы", parallel="из соседней группы", mentor_role="куратор группы",
-                  mentor_role_dat="куратору группы", mentor_role_cap="Куратор группы", age="17")
+SAMPLE = {"name": "Саша", "friend": "Женя", "city": "Тула", "mates": "одноклассники", "Mates": "Одноклассники",
+          "to_study": "в школу", "in_study": "школы", "in_study_short": "школа", "klass_gen": "класса", "class_size": "26",
+          "social_in": "во ВКонтакте / в соцсети", "msg_in": "в мессенджере", "msg": "мессенджер", "device": "телефон",
+          "spec1": "Сварочное производство", "spec2": "Графический дизайн"}
 
 
-def load_js_array(path):
+def load(path, name):
     s = path.read_text(encoding="utf-8")
-    return json.loads(s[s.index("concat(") + 7: s.rindex(")")])
+    start = s.index("window." + name + " = ") + len("window." + name + " = ")
+    end = s.index("];", start) + 1
+    return json.loads(s[start:end])
 
 
-def render(text, sample):
+def render(text):
     def gender(m):
         pre, a, b = m.group(1), m.group(2), m.group(3)
         if a == "":
-            return f"{pre}({b})"          # сделал{|а} → сделал(а)
-        return f"{pre}{a}/{b}" if pre else f"{a}/{b}"  # пош{ёл|ла} → пошёл/ла, {друг|подруга} → друг/подруга
+            return f"{pre}({b})"
+        return f"{pre}{a}/{b}"
     t = re.sub(r"([А-Яа-яЁё]*)\{([^{}|]*)\|([^{}|]*)\}", gender, text)
-    return re.sub(r"\{(\w+)\}", lambda m: sample.get(m.group(1), m.group(0)), t)
+    return re.sub(r"\{(\w+)\}", lambda m: SAMPLE.get(m.group(1), m.group(0)), t)
 
 
 def fx_text(fx):
-    parts = [f"{'+' if v > 0 else '−'}{abs(v)} {STAT_NAMES[k]}" for k, v in fx.items()]
-    return ", ".join(parts)
+    out = []
+    for k, v in (fx or {}).items():
+        if k == "money":
+            out.append("все накопления" if v <= -999999 else f"{'+' if v > 0 else '−'}{abs(v):,} ₽".replace(",", " "))
+        else:
+            out.append(f"{'+' if v > 0 else '−'}{abs(v)} {STAT[k]}")
+    return ", ".join(out)
 
 
-def shade(cell, hex_color):
-    tc_pr = cell._tc.get_or_add_tcPr()
-    shd = OxmlElement("w:shd")
-    shd.set(qn("w:val"), "clear")
-    shd.set(qn("w:color"), "auto")
-    shd.set(qn("w:fill"), hex_color)
-    tc_pr.append(shd)
+def set_text(o):
+    parts = []
+    for k, v in (o.get("set") or {}).items():
+        name = FLAGS.get(k, k)
+        if k in ("track", "spec"):
+            parts.append(f"{name}: {render(str(v))}")
+        else:
+            parts.append(name if v else f"снимает «{name}»")
+    for k, v in (o.get("add") or {}).items():
+        parts.append({"exp": "цифровой след", "click": "рискованный клик"}.get(k, k) + f" +{v}")
+    return "; ".join(parts)
 
 
-def para(doc, text="", bold=False, italic=False, color=None, size=None, style=None, space_after=4):
+def para(doc, text="", bold=False, italic=False, color=None, size=None, style=None, after=4):
     p = doc.add_paragraph(style=style)
     if text:
         r = p.add_run(text)
@@ -83,198 +92,184 @@ def para(doc, text="", bold=False, italic=False, color=None, size=None, style=No
             r.font.color.rgb = color
         if size:
             r.font.size = Pt(size)
-    p.paragraph_format.space_after = Pt(space_after)
+    p.paragraph_format.space_after = Pt(after)
     return p
 
 
-def labeled(doc, label, text, color=None, indent=0.0):
+def labeled(doc, label, text, color=None, indent=0.0, bold_text=False):
     p = doc.add_paragraph()
-    p.paragraph_format.space_after = Pt(3)
+    p.paragraph_format.space_after = Pt(2)
     if indent:
         p.paragraph_format.left_indent = Cm(indent)
     r = p.add_run(label + " ")
     r.bold = True
     if color is not None:
         r.font.color.rgb = color
-    p.add_run(text)
+    r2 = p.add_run(text)
+    r2.bold = bold_text
     return p
 
 
+def when(e):
+    y = e["year"]
+    years = "любые годы" if y[0] <= 1999 and y[1] >= 2100 else (f"с {y[0]} года" if y[1] >= 2100 else f"{y[0]}–{y[1]}")
+    return f"Возраст {e['age'][0]}–{e['age'][1]} · {years}"
+
+
 def main():
-    stories = []
-    for name in ["past", "present", "future", "echo"]:
-        stories += load_js_array(ROOT / "js" / f"stories-{name}.js")
-    order = {"past": 0, "present": 1, "future": 2}
-    stories.sort(key=lambda s: (order[s["era"]], "echo" in s))
+    events = load(ROOT / "js" / "events.js", "EVENTS")
+    risks = load(ROOT / "js" / "events.js", "RISKS")
+    by_id = {e["id"]: e for e in events}
+    facts = dict(re.findall(r'(\w+):\s+"(.*?)",?\n', (ROOT / "js" / "world.js").read_text(encoding="utf-8").split("FACTS: {")[1]))
+
+    # кто вызывает какое последствие
+    callers = {}
+    for e in events:
+        for o in e.get("opts", []) + [e]:
+            for l in o.get("later", []) or []:
+                callers.setdefault(l["ev"], []).append(f"«{render(e.get('title', e['id']))}» → «{render(o.get('t', ''))}»" if o is not e else f"событие {e['id']}")
+    for r in risks:
+        callers.setdefault(r["ev"], []).append("ежегодный риск")
+        if r.get("safe"):
+            callers.setdefault(r["safe"], []).append("ежегодный риск, если есть защита")
 
     doc = Document()
     st = doc.styles["Normal"]
     st.font.name = "Calibri"
-    st.font.size = Pt(11)
+    st.font.size = Pt(10.5)
     st.element.rPr.rFonts.set(qn("w:eastAsia"), "Calibri")
     for s in doc.sections:
         s.left_margin = s.right_margin = Cm(2)
         s.top_margin = s.bottom_margin = Cm(1.8)
 
-    # ---------- Титул и как устроено ----------
-    h = doc.add_heading("1 из 22 миллионов", 0)
-    para(doc, "Онлайн-игра для разминки перед рабочими листами «Мастерской безопасных решений». "
-              "Все истории, варианты выбора и последствия.", color=DIM, size=12)
+    doc.add_heading("1 из 22 миллионов", 0)
+    para(doc, "Симуляция взросления о цифровой безопасности — разминка перед рабочими листами «Мастерской безопасных решений». "
+              "Все решения, варианты, последствия и правила.", color=DIM, size=12)
     para(doc, "Игра: https://irinilou.github.io/1in22m.life/", bold=True)
 
     doc.add_heading("Как устроена игра", 1)
     for line in [
-        "Время: 5–7 минут с телефона. Регистрация не нужна.",
-        "Старт. Участник выбирает время («Как повезёт», прошлое, настоящее или будущее), способ выбора региона "
-        "(«Как в жизни» — по численности учащихся или «Любой из 89» с равным шансом) и пол героя (или случайно).",
-        "Рождение. Случай выбирает один из 89 субъектов РФ, населённый пункт, год, имя, класс (5–11) или курс СПО (1–4) "
-        "со специальностью. Игра показывает: «Ты — 1 из ≈ N школьников и студентов региона и 1 из ≈ 22 млн по стране».",
-        "Уклон жизни. Участник выбирает, чем живёт герой: учёба, друзья, творчество, спорт или игры и техника. "
-        "От уклона зависят стартовые шкалы, дополнительные строки в последствиях и профессия в финале.",
-        "История. Завязка → первый выбор из трёх вариантов → последствие → поворот (вводная фраза зависит от первого выбора) "
-        "→ второй выбор из трёх → последствие.",
-        "Финал «через 8–14 лет»: что осталось от каждого решения, кем стал герой, итог жизни по самой сильной шкале, "
-        "его путь, «Взгляд педагога» (вопрос для размышления) и приглашение сравнить историю с соседом.",
-        "Шкалы (опоры): друзья рядом, доверие к взрослым, уверенность, цифровая грамотность. Каждое решение их меняет, "
-        "участник видит изменения сразу.",
-        "Верных и неверных ответов нет: у каждого варианта есть плюсы и цена. Тяжёлых сцен (суицид, насилие) нет.",
+        "По образцу «1 из 8 миллиардов». Участник выбирает мир (прошлое — рождение в 1990–1994, сегодня — 2008–2012, будущее — 2018–2022), "
+        "способ выбора региона, длительность (≈5, ≈8 или ≈12 минут) и пол. Случай выбирает один из 89 регионов (с показом вероятности), "
+        "населённый пункт, семью, достаток, родителей, бабушку, четырёх ровесников.",
+        "Жизнь идёт с 7 до 23 лет сама: один год длится 6, 10 или 16 секунд. Есть пауза, скорость 1×–8× и кнопка «До следующего решения».",
+        "Фокус года: учёба, друзья, игры, блог и творчество, спорт, подработка (с 14 лет). Фокус меняет шкалы каждый год и делает "
+        "связанные с ним события вероятнее. Его можно сменить в любой момент.",
+        "Решения всплывают окном: заголовок, ситуация, иногда блок «Данные» с фактом и источником, 3–4 пронумерованных варианта. "
+        "Варианты написаны нейтрально, без подсказок. У решений нет цвета в летописи — красным и зелёным подсвечиваются только последствия.",
+        "Последствия часто приходят не сразу: через минуту игрового года или через 1–2 года. В летописи у них подпись "
+        "«↳ последствие: …», а в финале — список «Последствия, которые пришли позже».",
+        "Риски. Раз в год игра проверяет, что накопилось: простой или общий пароль, читы, геометки, личное в открытом доступе, утечки, "
+        "рискованные клики. Отсюда — взломы, заражения, травля, преследование. Защита (вход по коду, предупреждённая бабушка, "
+        "кодовое слово) превращает атаку в «атаку отбили».",
+        "Доверие к взрослым — главная шкала для педагогов. У части событий два текста: если доверие 55 и выше, герой рассказывает "
+        "взрослым и всё заканчивается мягче; если ниже — молчит, и потери больше.",
+        "Травля не стоит отдельной темой: она появляется как результат цифровых решений — слитые скриншоты, взломанная страница, "
+        "старые посты, фото, отправленное «только для меня».",
+        "Развилки пути: после 9 класса (10 класс или колледж с одной из двух специальностей), после 11 (вуз, колледж, работа), "
+        "диплом колледжа (работа или учёба дальше). В 16 лет — «Пауза»: кому вы напишете, если в сети что-то пойдёт не так.",
+        "Финал «Запись о жизни»: сколько решений, взломов, случаев травли, сколько денег потеряли вы и семья, сколько атак отбито, "
+        "карта жизни, «Взгляд педагога» с выводами именно из этой жизни, все решения и вся летопись.",
+        "Примерно 20 решений за жизнь в режиме ≈8 минут (из 56 возможных, плюс развилки и последствия). Набор зависит от года, "
+        "возраста, фокуса и прошлых решений, поэтому две одинаковые жизни в зале практически невозможны.",
     ]:
-        para(doc, line, style="List Bullet", space_after=2)
-
-    doc.add_heading("Сколько повторов будет в зале", 1)
-    para(doc, "Всего 30 историй: по 10 на каждое время. Внутри истории регион, год, имя, класс и уклон всё равно выпадают "
-              "случайно, так что двух одинаковых жизней практически не бывает.")
-    para(doc, "Если 350 человек оставят «Как повезёт», одна история в среднем попадётся 12 раз, а самая частая — около 19–23 раз. "
-              "Если весь зал выберет одно и то же время, историй будет 10 на всех, и повторов станет 35–50. Поэтому ведущему лучше "
-              "сказать: «Время оставьте „Как повезёт“ — или выберите любое, но не все одно и то же».")
-    para(doc, "На одном телефоне истории не повторяются, пока не пройдены все 10 в выбранном времени. Кнопка «Прожить другую жизнь» сразу даёт новую.")
-    para(doc, "6 историй отмечены как «разминка»: они перекликаются с популярными кейсами рабочих листов "
-              "(нейросети, анонимность, съёмка и пересылка), но показывают их в другом времени и с другой стороны. "
-              "Остальные 24 ситуации в рабочих листах не встречаются.")
+        para(doc, line, style="List Bullet", after=2)
 
     doc.add_heading("Как читать этот файл", 1)
-    para(doc, "Род в текстах дан через скобки и косую черту: «сделал(а)», «пошёл/ла», «друг/подруга». В игре он подставляется "
-              "по полу героя. Имена и слова подставлены для примера: героя зовут Саша, друга — Женя, классную руководительницу — "
-              "Анна Сергеевна. В историях для колледжа «класс» меняется на «группу», а классная руководительница — на куратора.")
-    para(doc, "У каждого варианта указано: что происходит, как меняются шкалы, «+ если уклон» (дополнительная строка, если у героя "
-              "такой уклон), «мостик» к повороту и «через годы» — строка для финала.")
+    para(doc, "Род дан через скобки и косую черту: «дал(а)», «доволен/довольна». Имя друга в примере — Женя, город — Тула. "
+              "«Скрыто» — что вариант незаметно меняет в жизни героя; это влияет на будущие риски. «Позже» — отложенное последствие "
+              "с вероятностью.")
 
-    # ---------- Сводная таблица ----------
-    doc.add_heading("Все 30 историй", 1)
-    t = doc.add_table(rows=1, cols=5)
+    def write_decision(e, n=None):
+        title = f"{n}. {render(e['title'])}" if n else render(e["title"])
+        doc.add_heading(title, 3)
+        meta = when(e)
+        if e.get("focus"):
+            meta += " · чаще при фокусе: " + ", ".join(FOCUS[f] for f in e["focus"])
+        if e.get("need"):
+            meta += " · только если: " + ", ".join(FLAGS.get(k, k) for k in e["need"])
+        para(doc, meta, color=DIM, size=9.5, after=2)
+        para(doc, render(e["text"]))
+        if e.get("fact"):
+            labeled(doc, "Данные:", facts.get(e["fact"], ""), color=DIM)
+        for i, o in enumerate(e["opts"], 1):
+            labeled(doc, f"{i}.", render(o["t"]), bold_text=True)
+            labeled(doc, "Что происходит:", render(o["r"]), indent=0.6)
+            ft = fx_text(o.get("fx"))
+            if ft:
+                labeled(doc, "Шкалы:", ft, color=DIM, indent=0.6)
+            stx = set_text(o)
+            if stx:
+                labeled(doc, "Скрыто:", stx, color=DIM, indent=0.6)
+            for l in o.get("later", []) or []:
+                tgt = by_id.get(l["ev"], {})
+                d = "в том же году" if l["in"][1] == 0 else f"через {l['in'][0]}–{l['in'][1]} г."
+                labeled(doc, "Позже:", f"с вероятностью {int(l['p'] * 100)} % {d} — «{render(tgt.get('title') or tgt.get('text', l['ev'])[:70])}»",
+                        color=ACCENT, indent=0.6)
+
+    decisions = [e for e in events if e["kind"] == "decision" and not e.get("trigger") and not e.get("path")]
+    order = sorted(decisions, key=lambda e: (e["year"][0] > 2015, e["year"][0], e["age"][0]))
+    doc.add_page_break()
+    doc.add_heading(f"Решения ({len(decisions)})", 1)
+    para(doc, "Выпадают случайно с учётом возраста, года и фокуса. Сначала — решения, возможные в 2000-е, потом — более поздние.", color=DIM)
+    for n, e in enumerate(order, 1):
+        write_decision(e, n)
+
+    doc.add_page_break()
+    doc.add_heading("Развилки пути", 1)
+    for e in [x for x in events if x.get("path")]:
+        write_decision(e)
+
+    doc.add_page_break()
+    doc.add_heading("Последствия-решения", 1)
+    para(doc, "Не выпадают сами — только как последствие прошлых решений или ежегодного риска.", color=DIM)
+    for e in [x for x in events if x["kind"] == "decision" and x.get("trigger")]:
+        write_decision(e)
+        if callers.get(e["id"]):
+            labeled(doc, "Откуда берётся:", "; ".join(sorted(set(callers[e["id"]]))), color=DIM)
+
+    doc.add_heading("Последствия-события", 1)
+    for e in [x for x in events if x["kind"] == "event" and x.get("trigger")]:
+        color = BAD if e.get("tone") == "bad" else GOOD if e.get("tone") == "good" else None
+        p = labeled(doc, e["id"] + ":", render(e["text"]), color=color)
+        if e.get("hi"):
+            labeled(doc, "Если доверие к взрослым ≥ 55:", render(e["hi"]), color=GOOD, indent=0.6)
+        for al in e.get("alt", []) or []:
+            labeled(doc, "Если " + ", ".join(FLAGS.get(k, k) for k in al["if"]) + ":", render(al["text"]), color=GOOD, indent=0.6)
+        ft = fx_text(e.get("fx"))
+        if ft:
+            labeled(doc, "Шкалы:", ft, color=DIM, indent=0.6)
+        if callers.get(e["id"]):
+            labeled(doc, "Откуда берётся:", "; ".join(sorted(set(callers[e["id"]]))), color=DIM, indent=0.6)
+
+    doc.add_heading("Ежегодные риски", 1)
+    t = doc.add_table(rows=1, cols=4)
     t.style = "Light Grid Accent 1"
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for i, head in enumerate(["№", "Время", "История", "Роль героя", "Кто может выпасть"]):
-        t.rows[0].cells[i].text = head
-    for n, s in enumerate(stories, 1):
-        ages = [a for a in s["ages"]]
-        school = [str(a) for a in ages if isinstance(a, int)]
-        spo = [a[1:] for a in ages if isinstance(a, str)]
-        who = []
-        if school:
-            who.append(f"{school[0]}–{school[-1]} класс" if len(school) > 1 else f"{school[0]} класс")
-        if spo:
-            who.append(f"СПО {spo[0]}–{spo[-1]} курс" if len(spo) > 1 else f"СПО {spo[0]} курс")
-        title = render(s["title"], SAMPLE) + (" (разминка)" if "echo" in s else "")
+    for i, h in enumerate(["Событие", "Когда", "Что повышает шанс", "Что защищает"]):
+        t.rows[0].cells[i].text = h
+    for r in risks:
         row = t.add_row().cells
-        for i, val in enumerate([str(n), ERA_NAMES[s["era"]].split(" (")[0], s["emoji"] + " " + title, s["role"], ", ".join(who)]):
-            row[i].text = val
+        tgt = by_id[r["ev"]]
+        row[0].text = r["ev"] + " — " + render(tgt.get("title") or tgt["text"][:60]) + ("…" if not tgt.get("title") else "")
+        row[1].text = f"{r['age'][0]}–{r['age'][1]} лет, с {r['year'][0]}" + (" · один раз" if r.get("once") else "")
+        ups = [f"{FLAGS.get(k, k)} +{int(v * 100)} %" for k, v in (r.get("flags") or {}).items()]
+        ups += [f"{ {'exp': 'цифровой след', 'click': 'рискованный клик'}[k]} +{int(v * 100)} % за каждый" for k, v in (r.get("nums") or {}).items()]
+        row[2].text = (f"основа {int(r['base'] * 100)} %; " if r.get("base") else "") + "; ".join(ups)
+        row[3].text = ", ".join(FLAGS.get(k, k) for k in r.get("protect", [])) or "доверие к взрослым смягчает исход"
     for row in t.rows:
         for c in row.cells:
             for p in c.paragraphs:
-                for r in p.runs:
-                    r.font.size = Pt(9.5)
+                for run in p.runs:
+                    run.font.size = Pt(9)
 
-    # ---------- Истории ----------
-    current_era = None
-    for n, s in enumerate(stories, 1):
-        sample = SAMPLE_SPO if all(isinstance(a, str) for a in s["ages"]) else SAMPLE
-        if s["era"] != current_era:
-            current_era = s["era"]
-            doc.add_page_break()
-            doc.add_heading(ERA_NAMES[current_era], 1)
-        else:
-            doc.add_paragraph()
+    doc.add_heading("Фоновые события жизни", 1)
+    for e in [x for x in events if x["kind"] == "event" and not x.get("trigger")]:
+        labeled(doc, when(e) + ":", render(e["text"]), color=DIM)
 
-        doc.add_heading(f"{n}. {s['emoji']} {render(s['title'], sample)}", 2)
-        meta = f"Роль героя: {s['role']}. Годы: {s['years'][0]}–{s['years'][1]}."
-        para(doc, meta, color=DIM, size=10)
-        if "echo" in s:
-            para(doc, f"Разминка: перекликается с кейсом рабочих листов — {s['echo'].replace('Кейс', 'кейс')}.",
-                 italic=True, color=ACCENT, size=10)
-
-        para(doc, "Завязка", bold=True, color=ACCENT, space_after=2)
-        for p in s["intro"]:
-            para(doc, render(p, sample))
-
-        para(doc, "Выбор 1. " + render(s["q1"], sample), bold=True, color=ACCENT, space_after=2)
-        for i, o in enumerate(s["a"]):
-            labeled(doc, "АБВ"[i] + ".", render(o["t"], sample)).runs[1].bold = True
-            labeled(doc, "Что происходит:", render(o["r"], sample), indent=0.6)
-            for tilt, line in (o.get("tl") or {}).items():
-                labeled(doc, f"+ если уклон {TILT_NAMES[tilt]}:", render(line, sample), color=DIM, indent=0.6)
-            labeled(doc, "Шкалы:", fx_text(o["fx"]), color=DIM, indent=0.6)
-            labeled(doc, "Мостик к повороту:", render(o["br"], sample), color=DIM, indent=0.6)
-            labeled(doc, "Через годы:", render(o["ep"], sample), color=DIM, indent=0.6)
-
-        box = doc.add_table(rows=1, cols=1)
-        cell = box.rows[0].cells[0]
-        shade(cell, "E6ECFD")
-        cell.paragraphs[0].add_run("Поворот. ").bold = True
-        cell.paragraphs[0].add_run(render(s["twist"], sample))
-        doc.add_paragraph().paragraph_format.space_after = Pt(0)
-
-        para(doc, "Выбор 2. " + render(s["q2"], sample), bold=True, color=ACCENT, space_after=2)
-        for i, o in enumerate(s["b"]):
-            labeled(doc, "АБВ"[i] + ".", render(o["t"], sample)).runs[1].bold = True
-            labeled(doc, "Что происходит:", render(o["r"], sample), indent=0.6)
-            for tilt, line in (o.get("tl") or {}).items():
-                labeled(doc, f"+ если уклон {TILT_NAMES[tilt]}:", render(line, sample), color=DIM, indent=0.6)
-            labeled(doc, "Шкалы:", fx_text(o["fx"]), color=DIM, indent=0.6)
-            labeled(doc, "Через годы:", render(o["ep"], sample), color=DIM, indent=0.6)
-
-        labeled(doc, "Взгляд педагога (на финальном экране):", render(s["view"], sample), color=ACCENT)
-
-    # ---------- Общие тексты ----------
-    content = (ROOT / "js" / "content.js").read_text(encoding="utf-8")
-    doc.add_page_break()
-    doc.add_heading("Общие тексты игры", 1)
-
-    doc.add_heading("Уклоны жизни и стартовые шкалы", 2)
-    para(doc, "У всех шкал старт 40, уклон добавляет:")
-    for line in ["📚 Учёба — +15 доверие к взрослым, +5 цифровая грамотность",
-                 "🫶 Друзья — +20 друзья рядом",
-                 "🎨 Творчество — +10 уверенность, +10 цифровая грамотность",
-                 "⚽ Спорт — +15 уверенность, +5 друзья рядом",
-                 "🎮 Игры и техника — +15 цифровая грамотность, +5 друзья рядом"]:
-        para(doc, line, style="List Bullet", space_after=2)
-
-    beats = re.search(r"window\.BEATS = (\{.*?\n\});", content, re.S).group(1)
-    doc.add_heading("Жизнь до истории (по времени и уклону)", 2)
-    for era in ["past", "present", "future"]:
-        block = re.search(era + r": \{(.*?)\n  \}", beats, re.S).group(1)
-        para(doc, ERA_NAMES[era], bold=True, space_after=2)
-        for tilt, text in re.findall(r"(\w+):\s+\"(.*?)\",?\n", block + "\n"):
-            labeled(doc, TILT_NAMES[tilt] + ":", render(text, SAMPLE), indent=0.4)
-
-    doc.add_heading("Классная руководительница / куратор (по времени)", 2)
-    for era, text in re.findall(r"(past|present|future): \{\n.*?mentor: \"(.*?)\"", content, re.S):
-        labeled(doc, ERA_NAMES[era] + ":", render(text, SAMPLE))
-
-    doc.add_heading("Кем стал герой (по уклону, одна строка случайно)", 2)
-    careers = re.search(r"window\.CAREERS = \{(.*?)\n\};", content, re.S).group(1)
-    for tilt, a, b in re.findall(r"(\w+):\s+\[\"(.*?)\",\s+\"(.*?)\"\]", careers, re.S):
-        para(doc, TILT_NAMES[tilt], bold=True, space_after=1)
-        para(doc, "• " + render(a, SAMPLE), space_after=1)
-        para(doc, "• " + render(b, SAMPLE))
-
-    doc.add_heading("Итог жизни (по самой высокой шкале)", 2)
-    for line in ["Друзья рядом — «Человек, у которого есть свои»",
-                 "Доверие к взрослым — «Человек, который умеет просить о помощи»",
-                 "Уверенность — «Человек, который не прячется»",
-                 "Цифровая грамотность — «Человек, который понимает, как устроена сеть»",
-                 "Если все шкалы ниже 50 — «Человек, который справился почти в одиночку»"]:
-        para(doc, line, style="List Bullet", space_after=2)
+    doc.add_heading("Данные (факты с источниками)", 1)
+    for k, v in facts.items():
+        para(doc, "• " + v, after=2)
 
     doc.save(OUT)
     print("Готово:", OUT)
